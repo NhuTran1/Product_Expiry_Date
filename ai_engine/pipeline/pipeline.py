@@ -209,32 +209,64 @@ def run_pipeline(image_path: str) -> dict[str, Any]:
         result["warnings"].append("ROI preprocessing did not return a processed image path.")
         return result
 
-    try:
-        threshold_output_path = str(
-            Path(result["roi_path"]).with_name(f"{Path(result['roi_path']).stem}_thresholded.png")
-        )
-        threshold_result = preprocess_roi(
-            result["roi_path"],
-            output_path=threshold_output_path,
-            threshold=True,
-        )
-    except Exception as error:
-        result["warnings"].append(f"Thresholded ROI preprocessing failed: {error}")
-        threshold_result = None
-
     variants = [
         ("original_roi", result["roi_path"]),
         ("default_preprocessed", result["processed_roi_path"]),
     ]
-    if isinstance(threshold_result, dict):
-        _extend_warnings(result, threshold_result)
-        threshold_path = _optional_string(threshold_result.get("processed_image_path"))
-        if threshold_path:
-            variants.append(("thresholded", threshold_path))
+
+    roi_path = Path(result["roi_path"])
+    preprocess_variants: list[tuple[str, dict[str, Any]]] = [
+        ("thresholded", {"threshold": True}),
+        ("scaled", {"resize_scale": 2.5, "clahe_clip_limit": 3.0}),
+        (
+            "scaled_sharpened",
+            {
+                "resize_scale": 2.5,
+                "clahe_clip_limit": 3.0,
+                "sharpen": True,
+                "sharpen_amount": 0.5,
+            },
+        ),
+        (
+            "scaled_thresholded",
+            {
+                "resize_scale": 2.5,
+                "clahe_clip_limit": 3.0,
+                "threshold": True,
+            },
+        ),
+        (
+            "scaled_inverted_thresholded",
+            {
+                "resize_scale": 2.5,
+                "clahe_clip_limit": 3.0,
+                "threshold": True,
+                "invert": True,
+            },
+        ),
+    ]
+
+    for variant_name, options in preprocess_variants:
+        try:
+            variant_result = preprocess_roi(
+                result["roi_path"],
+                output_path=str(roi_path.with_name(f"{roi_path.stem}_{variant_name}.png")),
+                **options,
+            )
+        except Exception as error:
+            result["warnings"].append(f"{variant_name} ROI preprocessing failed: {error}")
+            continue
+
+        if not isinstance(variant_result, dict):
+            result["warnings"].append(f"{variant_name} ROI preprocessing returned an invalid result.")
+            continue
+
+        _extend_warnings(result, variant_result)
+        variant_path = _optional_string(variant_result.get("processed_image_path"))
+        if variant_path:
+            variants.append((variant_name, variant_path))
         else:
-            result["warnings"].append("Thresholded ROI preprocessing did not return an image path.")
-    elif threshold_result is not None:
-        result["warnings"].append("Thresholded ROI preprocessing returned an invalid result.")
+            result["warnings"].append(f"{variant_name} ROI preprocessing did not return an image path.")
 
     attempts = [_run_ocr_attempt(name, path) for name, path in variants]
     result["candidate_results"] = _json_value(attempts)
@@ -244,6 +276,11 @@ def run_pipeline(image_path: str) -> dict[str, Any]:
     result["parsed_date"] = selected_attempt["parsed_date"]
     result["selected_raw"] = selected_attempt["selected_raw"]
     result["detected_format"] = selected_attempt["detected_format"]
+    result["parser_confidence"] = selected_attempt["parser_confidence"]
+    result["final_confidence"] = round(
+        min(selected_attempt["parser_confidence"], selected_attempt["ocr_confidence"]),
+        4,
+    )
     result["warnings"].extend(selected_attempt["warnings"])
 
     ocr_success = selected_attempt["ocr_success"]

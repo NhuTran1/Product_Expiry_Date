@@ -32,10 +32,12 @@ def preprocess_roi(
     image_path: str,
     *,
     output_path: str | None = None,
+    resize_scale: float = 1.0,
     enhance_contrast: bool = True,
     denoise: bool = False,
     threshold: bool = False,
     sharpen: bool = False,
+    invert: bool = False,
     clahe_clip_limit: float = 2.0,
     clahe_tile_grid_size: int = 8,
     sharpen_amount: float = 0.35,
@@ -54,6 +56,18 @@ def preprocess_roi(
 
     processed = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     operations.append("grayscale")
+
+    if resize_scale <= 0:
+        raise ValueError("resize_scale must be greater than 0")
+    if resize_scale != 1.0:
+        processed = cv2.resize(
+            processed,
+            None,
+            fx=resize_scale,
+            fy=resize_scale,
+            interpolation=cv2.INTER_CUBIC,
+        )
+        operations.append(f"resize_{resize_scale:g}x")
 
     if enhance_contrast:
         processed = _enhance_contrast(
@@ -88,6 +102,10 @@ def preprocess_roi(
         )
         operations.append("adaptive_thresholding")
 
+    if invert:
+        processed = cv2.bitwise_not(processed)
+        operations.append("invert")
+
     processed_path = _build_output_path(image_path, output_path)
     success = cv2.imwrite(str(processed_path), processed)
     if not success:
@@ -100,10 +118,12 @@ def preprocess_roi(
         "metadata": {
             "original_shape": original_shape,
             "processed_shape": processed.shape,
+            "resize_scale": resize_scale,
             "enhance_contrast": enhance_contrast,
             "denoise": denoise,
             "threshold": threshold,
             "sharpen": sharpen,
+            "invert": invert,
             "clahe_clip_limit": clahe_clip_limit,
             "clahe_tile_grid_size": clahe_tile_grid_size,
             "sharpen_amount": sharpen_amount,

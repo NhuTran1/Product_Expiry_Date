@@ -96,7 +96,7 @@ def _overlaps(start: int, end: int, occupied_spans: list[tuple[int, int]]) -> bo
 
 def extract_date_candidates(text: str) -> list[dict]:
     """Extract valid non-overlapping date candidates and attach context scores."""
-    normalized_text = (text or "").upper()
+    normalized_text = normalize_ocr_text(text)
     expiration_matches = _keyword_matches(normalized_text, EXPIRATION_KEYWORDS)
     production_matches = _keyword_matches(normalized_text, PRODUCTION_KEYWORDS)
     occupied_spans: list[tuple[int, int]] = []
@@ -162,6 +162,16 @@ def _selection_rank(candidate: dict) -> tuple:
         -candidate["start"],
     )
 
+
+def normalize_ocr_text(text: str) -> str:
+    normalized = (text or "").upper()
+    normalized = normalized.replace("：", ":")
+    normalized = normalized.replace("／", "/")
+    normalized = normalized.replace("－", "-")
+    normalized = normalized.replace("．", ".")
+    normalized = normalized.replace(",", ".")
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized
 
 def parse_date_text(text: str) -> dict:
     """Parse OCR text and select the most likely expiration date."""
